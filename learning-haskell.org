@@ -657,3 +657,141 @@ main =  do hSetBuffering stdout NoBuffering
            n  <- readLn
            display (solutions'' ns n)
 #+end_src
+
+* Interactive Programming
+
+`IO Char` returns a character while `IO ()` returns no result value.
+
+** Basic library actions:
+
+`getChar :: IO Char`: Reads a character, prints it and returns the character
+`putChar :: Char -> IO ()`: Echoes the character.
+`return :: a -> IO a`: simply returns the value.
+
+** Sequencing
+
+Uses the keyword `do` to combine a sequence of actions.
+
+#+begin_src haskell
+act :: IO (Char,Char)
+act = do x <- getChar
+         getChar
+         y <- getChar
+         return (x,y)
+
+getLine :: IO String
+getLine = do x <- getChar
+             if x == '\n' then
+                return []
+             else
+               do xs <- getLine
+                  return (x:xs)
+
+putStr :: String -> IO ()
+putStr []     = return ()
+putStr (x:xs) = do putChar x
+                   putStr xs
+
+putStrLn :: String -> IO ()
+putStrLn xs = do putStr xs
+                 putChar '\n'
+                   
+strlen :: IO ()
+strlen = do putStr "Enter a string: "
+            xs <- getLine
+            putStr "The string has "
+            putStr (show (length xs))
+            putStrLn " characters"
+#+end_src
+
+`show` transforms the value into a string in order to print it. 
+
+** Hangman
+
+#+begin_src haskell
+import System.IO
+
+getCh :: IO Char
+getCh = do hSetEcho stdin False
+           x <- getChar
+           hSetEcho stdin True
+           return x
+
+sgetLine :: IO String
+sgetLine = do x <- getCh
+              if x == '\n' then
+                 do putChar x
+                    return []
+              else
+                 do putChar '-'
+                    xs <- sgetLine
+                    return (x:xs)
+
+match :: String -> String -> String
+match xs ys =
+  [if elem x ys then x else '-' | x <- xs]
+                    
+play :: String -> IO ()
+play word =
+  do putStr "? "
+     guess <- getLine
+     if guess == word then
+        putStrLn "You got it!"
+     else
+        do putStrLn (match word guess)
+           play word
+                    
+hangman :: IO ()
+hangman = do PutStrLn "Think of a word: "
+             word <- sgetLine
+             putStrLn "Try to guess it:"
+             play word
+#+end_src
+
+* Lazy Evaluation
+
+- Avoids unnecessary evaluation.
+- Supports infinite lists.
+- Allows programs to be more modular: separates control and data.
+- Ensures termination whenever possible.
+
+Outermost evaluation may give a result when innermost result fails. E.g. `fst(0,infinity)`.
+Caveat: outermost takes more steps to reduce.
+How to avoid it? Use pointers to indicate sharing of arguments.
+
+Lazy evaluation = outermost evaluation + sharing of arguments.
+
+** Generating Primes (Sieve of Eratosthenes)
+
+Steps:
+1. Write down the infinite sequence 2,3,4...
+2. Mark the first number p as being prime
+3. Delete all multiples of p from the list
+4. Return to step 2
+
+#+begin_src haskell
+primes = sieve [2..]
+sieve (p:xs) = p : sieve [x | x <- xs, mod x p /= 0]
+#+end_src 
+
+#+begin_src haskell
+twin (x,y) = y == x+2
+twins = filter twin (zip primes (tail primes))
+#+end_src
+
+* Key Concepts
+
+Saying *what* to compute, rather than *how*.
+
+#+begin_src haskell
+sum . map (^2) . filter even
+#+end_src
+
+Pure vs. impure code.
+
+*Equational reasoning:* `map f . map g = map (f . g)`
+
+Drawbacks:
+- Difficult to reason about efficiency.
+- Limite tool support for developers.
+- Requires ability to think abstractly.
