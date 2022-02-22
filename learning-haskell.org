@@ -357,6 +357,65 @@ init [_]    = []
 init (x:xs) = x : init xs
 #+end_src
 
+* Types and Classes
+
+*What is a type?*
+
+A name or a collection of related values, e.g. `bool`.
+
+If evaluating an expression `e` would produce a value of type `t`, then e has type t, denoted `e :: t`.
+
+Every well formed expression has a type, which is calculated using *type inference*.
+
+All type errors are found at compile time (strongly typed language): safer and faster.
+
+Tuples: list of elements of possibly different types. The type of a tuple says the length of the tuple.
+
+Lists: list of elements of the same type. Doesn't say anything about its length.
+
+A *function* is a mapping from values of one type to values of another type. E.g. `f : a -> b`.
+
+** Curried Functions
+
+E.g.
+
+#+begin_src haskell
+  add' :: Int -> (Int -> Int)
+  add' x y = x+y
+#+end_src
+
+Here the second argument is taken by returning a function as result.
+
+Conventions:
+
+1. The arrow associates to the right.
+
+2. Function application associates to the left.
+
+** Polymorphic Function
+
+If the type contains one or more type variables.
+
+E.g. `length :: [a] -> Int`.
+
+** Overloaded Functions
+
+If its type contains one or more class contraints.
+
+E.g. `(+) :: Num a => a -> a -> a`.
+
+I.e., `a` must be a numeric type.
+
+Main type classes: `Num`, `Eq`, `Ord`.
+
+** Tips:
+
+- Begin a function by writing its type.
+
+- State the type of every new function defined.
+
+- When defined polymorphic functions that use numbers, equality or orderings, include the necessary class constraints.
+
 * Declaring Types and Classes
 
 ** Type Declarations
@@ -795,3 +854,286 @@ Drawbacks:
 - Difficult to reason about efficiency.
 - Limite tool support for developers.
 - Requires ability to think abstractly.
+
+* Sudoku
+
+#+begin_src haskell
+
+  -- Basic Declarations
+
+  type Grid     = Matrix Value
+  type Matrix a = [Row a]
+  type Row a    = [a]
+  type Value    = Char
+
+  blank :: Grid
+  blank = replicate 9 (replicate 9 '.')
+
+  -- Is this grid valid?
+
+  rows :: Matrix a -> [Row a]
+  rows = id
+
+  cols :: Matrix a -> [Row a]
+  cols = transpose
+
+  boxs :: Matrix a -> [Row a]
+  boxs = unpack . map cols . pack
+         where
+           pack   = split . map split
+           split  = chop boxsize
+           unpack = map concat. concat
+
+  chop :: Int -> [a] -> [[a]]
+  chop n [] = []
+  chop n xs = take n xs : chop n (drop n xs)
+
+  valid :: Grid -> Bool
+  valid g = all nodups (rows g) &&
+            all nodups (cols g) &&
+            all nodups (boxs g)
+
+  nodups :: Eq a => [a] -> Bool
+  nodups []     = True
+  nodups (x:xs) = not (elem x xs) && nodups xs
+
+  -- A basic solver
+
+  solve :: Grid -> [Grid]
+  solve = filter valid . collapse . choices
+
+  -- Takes each blank cell and fills it with every possible solution
+
+  type Choices = [Value]
+
+  choices :: Grid -> Matrix Choices
+  choices g = map (map choice) g
+              where
+                choice v = if v == '.' then
+                              ['1'..'9']
+                           else
+                              [v]
+
+  -- Cartesian Product
+  cp :: [[a]] -> [[a]]
+  cp []       = [[]]
+  cp (xs:xss) = [y:ys | y <- xs, ys <- cp xss]
+
+  -- Takes all possible values
+  collapse :: Matrix [a] -> [Matrix a]
+  collapse m = cp (map cp m)
+
+  -- Pruning the search space
+
+  prune :: Matrix Choices -> Matrix Choices
+  prune = pruneBy boxs . pruneBy cols . pruneBy rows
+          where pruneBy f = f . map reduce . f
+
+
+  reduce :: Row Choices -> Row Choices
+  reduce xs = [xs `minus` singles | xs <- xss]
+              where singles = concat (filter single xss)
+
+  minus :: Choices -> Choices -> Choices
+  xs `minus` ys = if single xs then xs else xs \\ ys
+
+  solve2 = filter valid . collapse . prune . choices
+
+  solve3 = filter valid . collapse . fix prune . choices
+
+  fix :: Eq a => (a -> a) -> a -> a
+  fix f x = if x == x' then x else if fix f x'
+            where x' = f x
+
+  -- Blocked matrices
+
+  void :: Matrix Choices -> Bool
+  void m = any (any null) m
+
+  safe :: Matrix Choices -> Bool
+  safe m = all consistent (rows m) &&
+           all consistent (cols m) &&
+           all consistent (boxs m)
+
+  consistent :: Row Choices -> Bool
+  consistent = nodups . concat . filter single
+
+  -- Either has empty cells or duplicated single cells
+  blocked :: Matrix Choices -> Bool
+  blocked m = void m || not (safe m)
+
+  solve4 = search . prune . choices
+
+  search :: Matrix Choices -> [Grid]
+  search m | blocked m          = []
+           | all (all single) m = collapse m
+           | otherwise          = [g | m' <- expand m, g  <- search (prune m')]
+
+  single :: [a] -> Bool
+  single [_] = True
+  single _   = False
+
+  expand :: Matrix Choices -> [Matrix Choices]
+  expand m              =
+     [rows1 ++ [row1 ++ [c] : row2] ++ rows2 | c <- cs]
+     where
+        (rows1,row:rows2) = break (any (not . single)) m
+        (row1,cs:row2)    = break (not . single) row
+
+  main :: IO ()
+  main = putStrLn (unlines (head (solve4 easy)))
+
+#+end_src
+
+* Connect Four Game
+
+** The board
+
+#+begin_src haskell
+
+  rows = 6
+  cols = 7
+  win = 4
+  depth = 6
+
+  type Board  = [Row]
+  type Row    = [Player]
+  data Player = O | B | X
+                deriving (Ord, Eq, Show)
+
+#+end_src
+
+*Types* are collections of related values.
+*Classes* are collections of related types.
+
+`deriving Eq` is equivalent to:
+
+#+begin_src haskell
+  instance Eq Player where
+    O == O = True
+    B == B = True
+    X == X = True
+    _ == _ = False
+  #+end_src
+
+`Ord` states that O $\leq$ B $\leq$ X. Also, it's possible to return the maximum and the minimum.
+
+`Show` allows printing.
+
+** Minimax Algorithm
+
+1. Produce the game tree to a given depth.
+   
+2. Label each leaf with winner or B if not over or draw.
+   
+3. Work up the tree.
+   
+  3.1 If O to play, take minimum of the children (O < B < X).
+  
+  3.2 If X to play, take maximum of the children (O < B < X).
+  
+4. Best move is one with the same label as the root.
+
+* Functors
+
+** Programming with effects
+
+Shall we be pure or impure?
+
+*Pure*: programs are mathematical functions. No interaction with the outside world.
+
+*Impure*: programs can have side effects.
+
+Can we combine the benefits of the two approaches? Yes, with *Monads*!
+
+** Abstracting programming patterns
+
+Consider the following example:
+
+#+begin_src haskell
+
+  inc :: [Int] -> [Int]
+  inc []     = []
+  inc (n:ns) = n+1 : inc ns
+
+  sqr :: [Int] -> [Int]
+  sqr []     = []
+  sqr (n:ns) = n^2 : sqr ns
+    
+#+end_src
+
+We're using the same programming pattern in both cases! Processing the first case and the recursively processing the rest of the list.
+
+This pattern is captured by the higher-order function `map`:
+
+#+begin_src haskell
+  map :: (a -> b) -> [a] -> [b]
+  map f []     = []
+  map f (x:xs) = f x : map f xs
+
+  inc = map (+1)
+  sqr = map (^2)
+#+end_src
+
+Generalizing further, we can map over other data structures using `functor`:
+
+#+begin_src haskell
+  class Functor f where
+    fmap :: (a -> b) -> f a -> f b
+#+end_src
+
+`f` must be a parametrized type, like trees or lists.
+
+Example: The *list* functor.
+
+#+begin_src haskell
+  instance Functor [] where
+    -- fmap :: (a -> b) -> [a] -> [b]
+    fmap = map
+#+end_src
+
+Here `[]` is the parametrized type of lists.
+
+It's not possible to declare the types in instances.
+
+Example: The *maybe* functor.
+
+#+begin_src haskell
+
+  -- Parametrized type
+  data Maybe a = Nothing | Just a
+
+  instance Functor Maybe where
+    -- fmap :: (a -> b) -> Maybe a -> Maybe b
+    fmap g Nothing  = Nothing
+    fmap g (Just x) = Just (g x)
+
+#+end_src
+
+Example: The *tree* functor.
+
+#+begin_src haskell
+
+  data Tree a = Leaf a
+              | Node (Tree a) (Tree a)
+
+  instance Functor Tree where
+    -- fmap :: (a -> b) -> Tree a -> Tree b
+    fmap g (Leaf x)   = Leaf (g x)
+    fmap g (Node l r) = Node (fmap g l) (fmap g r)
+
+  fmap length (Leaf "abc") -- evaluates to Leaf 3
+  fmap even (Node (Leaf 1) (Leaf 2)) -- evaluates to (Node (Leaf False) (Leaf True))
+
+#+end_src
+
+** Why use functors?
+
+1. We can use the same name, `fmap`, for functions that are essentially the same.
+
+2. Define generic functions that work for any functorial type.
+
+#+begin_src haskell
+  inc :: Functor f => f Int -> f Int
+  inc = fmap (+1)
+#+end_src
