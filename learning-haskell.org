@@ -1137,3 +1137,129 @@ Example: The *tree* functor.
   inc :: Functor f => f Int -> f Int
   inc = fmap (+1)
 #+end_src
+
+* Applicative Functors
+
+Generalizing `fmap` for functions of several variables.
+
+#+begin_src haskell
+  class Functor2 f where
+    fmap2 :: (a -> b -> c) -> f a -> f b -> f c
+
+  -- Instead of manually defining as above, we can use the following functions:
+  pure :: a -> f a
+  (<*>) :: f (a -> b) -> f a -> f b
+
+  -- Applicative style:
+  pure g <*> x <*> y <*> z
+
+  fmap0 :: a -> f a
+  fmap0 = pure
+
+  fmap1 :: (a -> b) -> f a -> f b
+  fmap1 g x = pure g <*> x
+
+  fmap2 :: (a -> b -> c) -> f a -> f b -> f c
+  fmap2 g x y = pure g <*> x <*> y
+#+end_src
+
+*Applicative Functor* is a functor that supports the pure and star operations.
+
+*Star* is a generalized form os function application.
+
+#+begin_src haskell
+  class Functor f => Applicative f where
+    pure  :: a -> f a
+    (<*>) :: f (a -> b) -> f a -> f b
+#+end_src
+
+Some examples:
+
+#+begin_src haskell
+  -- Maybe
+
+  instance Applicative Maybe where
+    -- pure :: a -> Maybe a
+    pure x = Just x
+    -- (<*>) :: Maybe (a -> b) -> Maybe a -> Maybe b
+    Nothing <*> mx     = Nothing
+    (Just g) <*> mx    = fmap g mx
+
+  pure (+1) <*> (Just 1)             -- returns (Just 2)
+  pure (+) <*> (Just 1) <*> (Just 2) -- returns (Just 3)
+  pure (+) <*> Nothing <*> (Just 2)  -- returns Nothing
+
+  -- Lists
+
+  instance Applicative [] where
+    -- pure :: a -> [a]
+    pure x = [x]
+    -- (<*>) :: [a -> b] -> [a] -> [b]
+    gs <*> xs = [g x | g <- gs, x <- xs]
+
+  pure (+1) <*> [1,2,3]        -- returns [2,3,4]
+  pure (+) <*> [1] <*> [2]     -- returns [3]
+  pure (*) <*> [1,2] <*> [3,4] -- returns [3,4,6,8]
+#+end_src
+
+* Monads
+
+Consider this simple evaluator:
+
+#+begin_src haskell
+  data Expr = Val Int | Div Expr Expr
+
+  eval :: Expr -> Int
+  eval (Val n)   = n
+  eval (Div x y) = eval x `div` eval y
+
+  -- What if y is 0?
+
+  safediv :: Int -> Int -> Maybe Int
+  safediv _ 0 = Nothing
+  safediv n m = Just (n `div` m)
+
+  eval :: Expr -> Maybe Int
+  eval (Val n)   = Just n
+  eval (Div x y) = case eval x of
+                     Nothing -> Nothing
+                     Just n  -> case eval y of
+                       Nothing -> Nothing
+                       Just m  -> safediv n m
+
+  -- How can we simplify this?
+
+  eval :: Expr -> Maybe Int
+  eval (Val n)   = pure n
+  eval (Div x y) = pure safediv <*> eval x <*> eval y -- doesn't work: type error
+#+end_src
+
+Common pattern: we have a case analysis. If we have Nothing, return Nothing. Otherwise, process it. This happens twice.
+
+We define the operator `>>=` ('bind', 'into', 'then') as:
+
+#+begin_src haskell
+  mx >>= f = case mx of
+               Nothing -> Nothing
+               Just x  -> f x
+
+  (>>=) :: Maybe a -> (a -> Maybe b) -> Maybe b
+
+  eval :: Expr -> Maybe Int
+  eval (Val n)   = Just n
+  eval (Div x y) = eval x >>= (\n ->
+                   eval y >>= (\m ->
+                   safediv n m))
+#+end_src
+
+*Do notation* gets expanded to a series of bind operations and a function at the end.
+
+The `eval` above is exactly the same as:
+
+#+begin_src haskell
+  eval :: Expr -> Maybe Int
+  eval (Val n)   = Just n
+  eval (Div x y) = do n <- eval x
+                      m <- eval y
+                      safediv n m
+#+end_src
