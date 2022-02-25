@@ -1204,6 +1204,8 @@ Some examples:
 
 * Monads
 
+** Intuition
+
 Consider this simple evaluator:
 
 #+begin_src haskell
@@ -1252,7 +1254,7 @@ We define the operator `>>=` ('bind', 'into', 'then') as:
                    safediv n m))
 #+end_src
 
-*Do notation* gets expanded to a series of bind operations and a function at the end.
+*Do notation* gets expanded to a series of bind operations and a function at the end. Is syntatic sugar.
 
 The `eval` above is exactly the same as:
 
@@ -1262,4 +1264,74 @@ The `eval` above is exactly the same as:
   eval (Div x y) = do n <- eval x
                       m <- eval y
                       safediv n m
+#+end_src
+
+The bind operator deals with operations that may fail.
+
+If the `a` succeeds, we pass that value to a function of type `a -> Maybe b`.
+
+If `a` fails, the bind operator will propagate the failure.
+
+** Definition
+
+*Monad* is a class of applicative functors that support a bind operator.
+
+#+begin_src haskell
+  class Applicative m => Monad m where
+    (>>=)  :: m a -> (a -> m b) -> m b
+    return :: a   -> m a
+    return = pure
+#+end_src
+
+** Example: Maybe
+
+#+begin_src haskell
+  instance Monad Maybe where
+    -- (>>=) :: Maybe a -> (a -> Maybe b) -> Maybe b
+    Nothing >>= f = Nothing
+    Just x  >>= f = f x
+#+end_src
+
+** Example: Lists
+
+#+begin_src haskell
+  instance Monad [] where
+    -- (>>=) :: [a] -> (a -> [b]) -> [b]
+    xs >>= f = concat (map f xs)
+    -- Another way:
+    xs >>= f = [y | x <- xs, y <- f x]
+
+  pairs [1, 2] [3,4] -- returns [(1,3), (1,4), (2,3), (2,4)]
+  pairs :: [a] -> [b] -> [(a,b)]
+  pairs xs ys = do x <- xs
+                   y <- ys
+                   return (x,y)
+#+end_src
+
+** Example: State
+
+State: variable that possible changes over type.
+
+#+begin_src haskell
+  type State = ...
+  type ST a  = State -> (a, State)
+
+  -- types are abbreviations
+  -- data requires constructors
+  -- newtype is data with only one constructor
+
+  newtype ST a = S (State -> (a, State))
+
+  app :: ST a -> State -> (a, State)
+  app (S st) s = st s
+
+  -- make State as functor and applicative functor
+  -- then make it an instance of Monad class
+
+  instance Monad ST where
+    -- return :: a -> ST a
+    return x = S (\s -> (x,s))
+    -- (>>=) :: ST a -> (a -> ST b) -> ST b
+    st >>= f = S (\s -> let (x, s') = app st s
+                   in app (f x) s')
 #+end_src
